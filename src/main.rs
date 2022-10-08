@@ -1,0 +1,14 @@
+use port_sniffer::Sniffer;
+
+fn main() {
+    let sniffer = Sniffer::build(std::env::args()).unwrap_or_else(|err| {
+        println!("Error: {}", err);
+        println!("Usage: *.exe [-j <thread_num>] <ip_address>.");
+        std::process::exit(1)
+    });
+    let result = sniffer.sniff();
+    println!("{}",result.len());
+    for port in result {
+        println!("{port}");
+    }
+}
