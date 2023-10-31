@@ -1,7 +1,7 @@
 use std::net::{IpAddr, TcpStream};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub struct Sniffer {
@@ -55,15 +55,15 @@ impl Sniffer {
     }
 
     pub fn sniff(&self) -> Vec<u16> {
+        let current_port_number: Arc<Mutex<u32>> = Arc::new(Mutex::new(1));
         let (tx, rx) = channel();
 
         // scan
-        for i in 0..self.thread_num {
+        for _ in 0..self.thread_num {
             let ip_address = Arc::new(self.ip_address);
             let new_tx = tx.clone();
-            let port = i;
-            let thread_num = self.thread_num;
-            thread::spawn(move || scan(ip_address, new_tx, port, thread_num));
+            let clone_current_port = Arc::clone(&current_port_number);
+            thread::spawn(|| scan(ip_address, new_tx, clone_current_port));
         }
         drop(tx);
         // collect result
@@ -77,21 +77,24 @@ impl Sniffer {
     }
 }
 
-fn scan(ip_address: Arc<IpAddr>, tx: Sender<u16>, start_port: usize, thread_num: usize) {
-    static MAX_PORTS_NUMBER: u16 = 65535;
-    let mut port = (start_port + 1) as u16;
+fn scan(ip_address: Arc<IpAddr>, tx: Sender<u16>, current_port: Arc<Mutex<u32>>) {
+    static MAX_PORTS_NUMBER: u32 = 65535;
     loop {
+        let mut port = current_port.lock().unwrap();
+        if *port > MAX_PORTS_NUMBER {
+            break;
+        }
+        let c_port = *port as u16;
+        *port += 1; // next port
+        drop(port); // manual release lock
+
         // scan
-        println!("Checking port {port} ...");
-        match TcpStream::connect((*ip_address, port as u16)) {
+        println!("Checking port {c_port} ...");
+        match TcpStream::connect((*ip_address, c_port)) {
             Ok(_) => {
-                tx.send(port).unwrap();
+                tx.send(c_port).unwrap();
             }
             Err(_) => {}
         }
-        if (MAX_PORTS_NUMBER - port) <= thread_num as u16 {
-            break;
-        }
-        port += thread_num as u16;
     }
 }
